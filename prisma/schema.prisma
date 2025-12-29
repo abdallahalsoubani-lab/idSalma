@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  DRAFT
+  ID_UPLOADED
+  OCR_DONE
+  LIVENESS_DONE
+  FACE_MATCH_DONE
+  COMPLETED
+  FAILED
+  NEED_REVIEW
+}
+
+enum Decision {
+  PENDING
+  APPROVED
+  REJECTED
+  MANUAL_REVIEW
+}
+
+enum DocumentType {
+  ID_CARD
+  PASSPORT
+}
+
+model Session {
+  id                String        @id @default(cuid())
+  status            SessionStatus @default(DRAFT)
+  decision          Decision      @default(PENDING)
+  documentType      DocumentType?
+
+  // Consent
+  consentGiven      Boolean       @default(false)
+  consentTimestamp  DateTime?
+
+  // Document S3 Keys
+  documentFrontKey  String?
+  documentBackKey   String?
+  idFaceCropKey     String?
+
+  // Liveness
+  livenessBestFrameKey String?
+  livenessSessionId    String?
+
+  // Scores
+  ocrConfidenceScore   Float?
+  livenessScore        Float?
+  faceMatchScore       Float?
+
+  // Extracted Data (JSON)
+  extractedData     Json?
+
+  // Flags
+  flags             String[]
+
+  // Provider References
+  textractJobId     String?
+
+  // Admin Review
+  adminDecision     Decision?
+  adminReviewerId   String?
+  adminReviewNotes  String?
+  adminReviewedAt   DateTime?
+
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  expiresAt         DateTime?
+
+  // Relations
+  auditLogs         AuditLog[]
+  adminReviewer     Admin?        @relation(fields: [adminReviewerId], references: [id])
+
+  @@index([status])
+  @@index([decision])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  eventType   String
+  actor       String
+  payload     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         String    @default("reviewer")
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model SystemSettings {
+  id                 String @id @default("default")
+  faceMatchThreshold Float  @default(85)
+  ocrMinConfidence   Float  @default(70)
+  livenessThreshold  Float  @default(90)
+  retentionDays      Int    @default(7)
+  updatedAt          DateTime @updatedAt
+}
